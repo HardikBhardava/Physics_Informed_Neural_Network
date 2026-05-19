@@ -10,14 +10,14 @@ print("device:", device)
 alpha = 0.01
 a, b = 0.1, 0.3
 
-lam_pde = 1000.0
-lam_adj = 1000.0
-lam_opt = 1000.0
+lam_pde = 100.0
+lam_adj = 100.0
+lam_opt = 500.0
 lam_cost = 1.0
 
 # Neural network
 class MLP(nn.Module):
-    def __init__(self, hidden=64, depth=4):
+    def __init__(self, hidden=8, depth=3):
         super().__init__()
         layers = [nn.Linear(1, hidden), nn.Tanh()]
         for _ in range(depth - 1):
@@ -94,7 +94,7 @@ params = (
 optimizer = torch.optim.Adam(params, lr=1e-3)
 
 # Training with Adam
-for epoch in range(30000):
+for epoch in range(10000):
     x = torch.rand(1500, 1, device=device)
     x.requires_grad_(True)
 
@@ -137,72 +137,72 @@ for epoch in range(30000):
 
     if epoch % 3000 == 0:
         with torch.no_grad():
-            x_test = torch.linspace(0, 1, 1000, device=device).reshape(-1, 1)
+            x_test = torch.linspace(0, 1, 64, device=device).reshape(-1, 1)
             err_u = torch.sqrt(torch.mean((u_net(x_test) - exact_u(x_test))**2))
             err_q = torch.sqrt(torch.mean((q_net(x_test) - exact_q(x_test))**2))
             err_z = torch.sqrt(torch.mean((z_net(x_test) - exact_z(x_test))**2))
 
         print(
-            epoch,
-            "loss:", loss.item(),
-            "pde:", loss_pde.item(),
-            "adj:", loss_adj.item(),
-            "opt:", loss_opt.item(),
-            "err_u:", err_u.item(),
-            "err_q:", err_q.item(),
-            "err_z:", err_z.item()
+            f"Epoch {epoch:5d} | "
+            f"loss={loss.item():.4e} | "
+            f"pde={loss_pde.item():.4e} | "
+            f"adj={loss_adj.item():.4e} | "
+            f"opt={loss_opt.item():.4e} | "
+            f"err_u={err_u.item():.4e} | "
+            f"err_z={err_z.item():.4e} | "
+            f"err_q={err_q.item():.4e}"
         )
 
-# Optional LBFGS refinement
-optimizer_lbfgs = torch.optim.LBFGS(
-    params,
-    lr=1.0,
-    max_iter=3000,
-    max_eval=3000,
-    tolerance_grad=1e-9,
-    tolerance_change=1e-9,
-    history_size=100,
-    line_search_fn="strong_wolfe"
-)
+# # Optional LBFGS refinement
+# optimizer_lbfgs = torch.optim.LBFGS(
+#     params,
+#     lr=1.0,
+#     max_iter=3000,
+#     max_eval=3000,
+#     tolerance_grad=1e-9,
+#     tolerance_change=1e-9,
+#     history_size=100,
+#     line_search_fn="strong_wolfe"
+# )
 
-x_lbfgs = torch.linspace(0, 1, 2000, device=device).reshape(-1, 1)
-x_lbfgs.requires_grad_(True)
+# x_lbfgs = torch.linspace(0, 1, 64, device=device).reshape(-1, 1)
+# x_lbfgs.requires_grad_(True)
 
-def closure():
-    optimizer_lbfgs.zero_grad()
+# def closure():
+#     optimizer_lbfgs.zero_grad()
 
-    u = u_net(x_lbfgs)
-    z = z_net(x_lbfgs)
-    q = q_net(x_lbfgs)
+#     u = u_net(x_lbfgs)
+#     z = z_net(x_lbfgs)
+#     q = q_net(x_lbfgs)
 
-    u_xx = second_derivative(u, x_lbfgs)
-    z_xx = second_derivative(z, x_lbfgs)
+#     u_xx = second_derivative(u, x_lbfgs)
+#     z_xx = second_derivative(z, x_lbfgs)
 
-    pde_res = -u_xx + q * u - f_fun(x_lbfgs)
-    adj_res = -z_xx + q * z - (u - ud_fun(x_lbfgs))
+#     pde_res = -u_xx + q * u - f_fun(x_lbfgs)
+#     adj_res = -z_xx + q * z - (u - ud_fun(x_lbfgs))
 
-    q_proj = torch.clamp((1.0 / alpha) * u * z + qd_fun(x_lbfgs), a, b)
-    opt_res = q - q_proj
+#     q_proj = torch.clamp((1.0 / alpha) * u * z + qd_fun(x_lbfgs), a, b)
+#     opt_res = q - q_proj
 
-    loss_pde = torch.mean(pde_res**2)
-    loss_adj = torch.mean(adj_res**2)
-    loss_opt = torch.mean(opt_res**2)
+#     loss_pde = torch.mean(pde_res**2)
+#     loss_adj = torch.mean(adj_res**2)
+#     loss_opt = torch.mean(opt_res**2)
 
-    loss_track = 0.5 * torch.mean((u - ud_fun(x_lbfgs))**2)
-    loss_control = 0.5 * alpha * torch.mean((q - qd_fun(x_lbfgs))**2)
+#     loss_track = 0.5 * torch.mean((u - ud_fun(x_lbfgs))**2)
+#     loss_control = 0.5 * alpha * torch.mean((q - qd_fun(x_lbfgs))**2)
 
-    loss = (
-        lam_pde * loss_pde
-        + lam_adj * loss_adj
-        + lam_opt * loss_opt
-        + lam_cost * (loss_track + loss_control)
-    )
+#     loss = (
+#         lam_pde * loss_pde
+#         + lam_adj * loss_adj
+#         + lam_opt * loss_opt
+#         + lam_cost * (loss_track + loss_control)
+#     )
 
-    loss.backward()
-    return loss
+#     loss.backward()
+#     return loss
 
-print("Starting LBFGS refinement...")
-optimizer_lbfgs.step(closure)
+# print("Starting LBFGS refinement...")
+# optimizer_lbfgs.step(closure)
 
 # Plot results
 x_plot = torch.linspace(0, 1, 500, device=device).reshape(-1, 1)
